@@ -17,6 +17,7 @@ specific_arch="i486"
 arch="i486"
 abi=""
 dist="gnu"
+platform="3ds" ## TODO: make this value not hardcoded and default to blank
 
 start_time=""
 end_time=""
@@ -29,7 +30,13 @@ _get_deps(){
 	local skew=$(echo $1 | cut -d- -f1)
 	local libc=$(echo $1 | cut -d- -f2)
 
-	local URL="http://kernel.org/pub/linux/kernel/v5.x/linux-5.19.8.tar.xz http://busybox.net/downloads/busybox-1.34.1.tar.bz2"
+	if [ "$platform" = "3ds" ]; then
+		local KERNEL_URL="https://github.com/linux-3ds/linux/archive/refs/tags/latest.tar.gz"
+	else
+		local KERNEL_URL="http://kernel.org/pub/linux/kernel/v5.x/linux-5.19.8.tar.xz"
+	fi
+	
+	local URL="$KERNEL_URL http://busybox.net/downloads/busybox-1.34.1.tar.bz2"
 	local PKG="binutils/binutils-2.37.tar.gz gcc/gcc-10.3.0/gcc-10.3.0.tar.gz gmp/gmp-6.2.1.tar.xz mpc/mpc-1.2.1.tar.gz mpfr/mpfr-4.1.0.tar.gz"
 
 	if [ "$libc" = "musl" ]; then
@@ -378,6 +385,7 @@ compile_rootfs(){
 	mknod "$output_rootfs/dev/tty" c 5 0 2>/dev/null
 	mknod "$output_rootfs/dev/null" c 1 3 2>/dev/null
 	echo "Done."
+	chmod 777 "$logfile" # fix permission issue on logfile due to linux for 3ds requiring rootfs to be built first
 }
 
 compile_devrfs(){
@@ -435,17 +443,32 @@ compile_devrfs(){
 }
 
 compile_kernel(){
-	cd "$build/linux-5.19.8"
-
-	if [ ! -f .config ]; then
+	## TODO: make this detect linux folder and cd to it rather then rely on hardcoded paths
+	if [ "$platform" = "3ds" ]; then
+		cd "$build/linux-latest"
+	else
+		cd "$build/linux-5.19.8"
+	fi
+	
+	# skip config check on 3ds. make task "nintendo3ds_defconfig" handles this for us
+	if [ ! -f .config ] && [ "$platform" != "3ds" ]; then
 		echo "Error: Kernel has not been configured yet. Run $0 --config-kernel and try again"
 		exit 4
 	fi
 
-	script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads bzImage" "$logfile"
-	script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads modules" "$logfile"
-	script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch INSTALL_MOD_PATH=$output_rootfs modules_install" "$logfile"
-	cp arch/$linux_arch/boot/bzImage "$output"
+	if [ "$platform" = "3ds" ]; then
+		cp "$output/rootfs.cpio.gz" "$build/linux-latest" ## again, make linux path not hardcoded
+		script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads nintendo3ds_defconfig" "$logfile"
+		script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads all" "$logfile"
+		cp arch/$linux_arch/boot/dts/nintendo3ds_ctr.dtb "$output"
+		cp arch/$linux_arch/boot/dts/nintendo3ds_ktr.dtb "$output"
+	else
+		script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads bzImage" "$logfile"
+		script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads modules" "$logfile"
+		script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch INSTALL_MOD_PATH=$output_rootfs modules_install" "$logfile"
+	fi
+
+	cp arch/$linux_arch/boot/*zImage "$output"
 }
 
 create_boot_image(){
@@ -459,7 +482,14 @@ create_boot_image(){
 	printf "Done.\nCreating initramfs boot file..."
 	cd "$output_rootfs"
 	find . | cpio -H newc -ov > $output/rootfs.cpio 2>/dev/null
-	xz --check=crc32 $output/rootfs.cpio
+	
+	# use gzip on the rootfs when building the bootimage for 3ds as kernel build process requires this gziped
+	if [ "$platform" = "3ds" ]; then
+		gzip -9 $output/rootfs.cpio
+	else
+		xz --check=crc32 $output/rootfs.cpio
+	fi
+	
 	echo "Done"
 }
 
