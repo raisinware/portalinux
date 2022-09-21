@@ -514,7 +514,7 @@ compile_kernel(){
 
 	## TODO: fix this area
 	# skip config check on 3ds. make task "nintendo3ds_defconfig" handles this for us
-	if [ ! -f .config ] && [ "$platform" != "3ds" ]; then
+	if [ ! -f .config ]; then
 		echo "Error: Kernel has not been configured yet. Run $0 --config-kernel and try again"
 		exit 4
 	fi
