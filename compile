@@ -173,7 +173,7 @@ _parse_platform(){
 			platform="3ds"
 			;;
 		android32 | earm)
-			specific_arch="armv7a"
+			specific_arch="armv7"
 			dist="musl"
 			;;
 		android64 | earm64)
@@ -343,7 +343,7 @@ compile_rootfs(){
 	fi
 
 	printf "Creating rootfs structure..."
-	for i in bin dev sys proc lib opt sbin usr/bin usr/lib usr/sbin etc/init.d root mnt home tmp; do
+	for i in bin dev sys proc lib opt sbin usr/bin usr/lib usr/sbin root mnt home tmp; do
 		mkdir -p "$output_rootfs/$i"
 		printf "."
 	done
@@ -432,7 +432,7 @@ compile_rootfs(){
 		mkdir -p "$bash_dir/build"
 		cd "$bash_dir/build"
 		printf "Configuring GNU Bash..."
-		script -qeac "../configure --host=$compile_target --prefix=/ 2>&1" "$logfile" >/dev/null
+		script -qeac "../configure --host=$compile_target --prefix=/usr --includedir=/opt/include --sharedir=/opt/share 2>&1" "$logfile" >/dev/null
 		printf "Done.\nCompiling GNU Bash..."
 		script -qeac "make -j$threads 2>&1" "$logfile" >/dev/null
 		printf "Done.\nInstalling GNU Bash..."
@@ -447,10 +447,9 @@ compile_rootfs(){
 		echo "Done."
 	fi
 
-	if [ ! -r "$output_rootfs/etc/init.d/rcS" ]; then
+	if [ ! -r "$output_rootfs/etc" ]; then
 		printf "Installing etc files..."
-		cp "$plfiles/inittab" "$output_rootfs/etc"
-		cp "$plfiles/rcS" "$output_rootfs/etc/init.d"
+		cp -r "$plfiles/etc" "$output_rootfs"
 		chmod 777 "$output_rootfs/etc/init.d/rcS"
 		echo "Done."
 	fi
@@ -695,6 +694,7 @@ while [ $# -gt 0 ]; do
 			if [ $mode -eq 3 ]; then
 				printf "Deleting output directory..."
 				rm -rf "$output"
+				echo "Done."
 				shift
 			fi
 			rm -f "$logfile"
@@ -721,6 +721,7 @@ while [ $# -gt 0 ]; do
 			shift
 			;;
 		"--config-kernel")
+			_get_pkg_names
 			cd "$linux_dir"
 
 			if [ ! -f .config ]; then
@@ -778,5 +779,6 @@ case $action in
 	*)
 		printf "Error: Unknown build command. Run $0 --help for a list of supported commands."
 		exit 4
+		;;
 esac
 _runtime_calc stop
