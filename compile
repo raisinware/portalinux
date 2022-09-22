@@ -18,7 +18,7 @@ specific_arch="i486"
 arch="i486"
 abi=""
 dist="gnu"
-platform="3ds" ## TODO: remove this and fix everything that depends on it
+platform=""
 
 linux_dir=""
 binutils_dir=""
@@ -170,6 +170,7 @@ _parse_platform(){
 			specific_arch="armv6"
 			dist="musl"
 			kernel_url="https://github.com/linux-3ds/linux/archive/refs/tags/latest.tar.gz"
+			platform="3ds"
 			;;
 		android32 | earm)
 			specific_arch="armv7a"
@@ -512,24 +513,19 @@ compile_devrfs(){
 compile_kernel(){
 	cd "$linux_dir"
 
-	## TODO: fix this area
 	if [ ! -f .config ]; then
 		echo "Error: Kernel has not been configured yet. Run $0 --config-kernel and try again"
 		exit 4
 	fi
 
+	script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads bzImage" "$logfile"
+	script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads modules" "$logfile"
+	script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch INSTALL_MOD_PATH=$output_rootfs modules_install" "$logfile"
+	
 	if [ "$platform" = "3ds" ]; then
-		cp "$output/rootfs.cpio.gz" "$build/linux-latest" ## again, make linux path not hardcoded
-		# script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads nintendo3ds_defconfig" "$logfile"
-		script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads all" "$logfile"
 		cp arch/$linux_arch/boot/dts/nintendo3ds_ctr.dtb "$output"
 		cp arch/$linux_arch/boot/dts/nintendo3ds_ktr.dtb "$output"
-	else
-		script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads bzImage" "$logfile"
-		script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads modules" "$logfile"
-		script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch INSTALL_MOD_PATH=$output_rootfs modules_install" "$logfile"
 	fi
-
 	cp arch/$linux_arch/boot/*zImage "$output"
 }
 
@@ -564,13 +560,7 @@ create_boot_image(){
 		printf "Creating initramfs boot file..."
 		cd "$output_rootfs"
 		find . | cpio -H newc -ov > $output/rootfs.cpio 2>/dev/null
-		## TODO: pack 3ds image with xz instead
-		# use gzip on the rootfs when building the bootimage for 3ds as kernel build process requires this gziped
-		if [ "$platform" = "3ds" ]; then
-			gzip -9 $output/rootfs.cpio
-		else
-			xz --check=crc32 $output/rootfs.cpio
-		fi
+		xz --check=crc32 $output/rootfs.cpio
 		echo "Done"
 	fi
 }
@@ -734,7 +724,11 @@ while [ $# -gt 0 ]; do
 			cd "$linux_dir"
 
 			if [ ! -f .config ]; then
-				make ARCH=$linux_arch defconfig
+				if [ "$platform" = "3ds" ]; then
+					make ARCH=$linux_arch nintendo3ds_defconfig
+				else
+					make ARCH=$linux_arch defconfig
+				fi
 			fi
 
 			make ARCH=$linux_arch menuconfig
