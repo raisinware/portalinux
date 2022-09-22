@@ -777,7 +777,7 @@ case $action in
 		create_boot_image
 		;;
 	*)
-		printf "Error: Unknown build command. Run $0 --help for a list of supported commands.\n"
+		printf "Error: Unknown build command. Run $0 --help for a list of supported commands."
 		exit 4
 		;;
 esac
