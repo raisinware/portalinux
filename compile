@@ -527,16 +527,11 @@ compile_kernel(){
 		exit 4
 	fi
 
-	script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads bzImage" "$logfile"
-	script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads modules" "$logfile"
+	script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads" "$logfile"
 	script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch INSTALL_MOD_PATH=$output_rootfs modules_install" "$logfile"
-	#script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads dtbs" "$logfile"
 	
-	if [ "$platform" = "3ds" ]; then
-		cp arch/$linux_arch/boot/dts/nintendo3ds_ctr.dtb "$output"
-		cp arch/$linux_arch/boot/dts/nintendo3ds_ktr.dtb "$output"
-	fi
-	cp arch/$linux_arch/boot/*zImage "$output"
+	cp arch/$linux_arch/boot/dts/*.dtb "$output" 2>/dev/null || true
+	cp arch/$linux_arch/boot/*Image "$output"
 }
 
 rootfs_cleanup(){
