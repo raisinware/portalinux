@@ -161,6 +161,18 @@ _parse_platform(){
 			kernel_url="https://github.com/linux-3ds/linux/archive/refs/tags/latest.tar.gz"
 			platform="3ds"
 			;;
+		gc | gamecube) # Nintendo GameCube
+			specific_arch="powerpc"
+			dist="musl"
+			kernel_url="https://github.com/neagix/wii-linux-ngx/archive/refs/heads/stable-v3.x.tar.gz"
+			platform="gc"
+			;;
+		wii) # Nintendo Wii
+			specific_arch="powerpc"
+			dist="musl"
+			kernel_url="https://github.com/neagix/wii-linux-ngx/archive/refs/heads/stable-v3.x.tar.gz"
+			platform="wii"
+			;;
 		android32 | earm)
 			specific_arch="armv7"
 			dist="musl"
@@ -214,6 +226,9 @@ compile_toolchain(){
 
 		if [ "$dist" = "musl" ]; then
 			extra_flags="--disable-libsanitizer --enable-initfini-array"
+			if [ "$specific_arch" = "powerpc" ]; then
+				extra_flags="--with-long-double-64 --enable-secureplt $extra_flags"
+			fi
 		fi
 
 		mkdir -p "$gcc_dir/build"
@@ -264,12 +279,12 @@ compile_toolchain(){
 
 	# libgcc (libgcc-static for musl)
 	if [ ! -r "$toolchain_prefix/lib/gcc/$compile_target/10.3.0/libgcc.a" ]; then
-		local extra_flag=""
+		local extra_flags=""
 		cd "$gcc_dir/build"
 		printf "Compiling libgcc"
 		if [ "$dist" = "musl" ]; then
 			printf "%s" "-static..."
-			extra_flag="enable_shared=no"
+			extra_flags="enable_shared=no"
 		else
 			printf "..."
 			touch "$toolchain_prefix/$compile_target/include/gnu/stubs.h"
@@ -277,7 +292,7 @@ compile_toolchain(){
 			touch "$toolchain_prefix/$compile_target/include/gnu/stubs-64.h"
 			$compile_target-gcc -nostdlib -nostartfiles -shared -x c /dev/null -o "$toolchain_prefix/$compile_target/lib/libc.so"
 		fi
-		script -qeac "make -j$threads $extra_flag all-target-libgcc 2>&1" "$logfile" >/dev/null
+		script -qeac "make -j$threads $extra_flags all-target-libgcc 2>&1" "$logfile" >/dev/null
 		printf "Done.\nInstalling libgcc..."
 		script -qeac "make install-strip-target-libgcc 2>&1" "$logfile" >/dev/null
 		echo "Done."
@@ -338,6 +353,9 @@ compile_rootfs(){
 	done
 	echo "Done."
 
+	if [ "$specific_arch" = "powerpc" ]; then
+		export CFLAGS="-Wl,--secure-plt"
+	fi
 	if [ ! -r "$output_rootfs/usr/lib/libc.a" ]; then
 		local common_flags="--prefix=/usr --with-sysroot=/ --disable-multilib --host=$compile_target --datarootdir=/opt/share --includedir=/opt/include"
 		if [ "$dist" = "musl" ]; then
@@ -369,7 +387,7 @@ compile_rootfs(){
 	fi
 
 	if [ ! -r "$output_rootfs/usr/lib/libstdc++.a" ]; then
-		local extra_flag=""
+		local extra_flags=""
 		set +e
 		if [ ! -f "$gcc_dir/mpfr" ]; then
 			ln "$gmp_dir" "$gcc_dir/gmp" -s 2>/dev/null
@@ -378,7 +396,10 @@ compile_rootfs(){
 		fi
 
 		if [ "$dist" = "musl" ]; then
-			extra_flag="--disable-libsanitizer"
+			extra_flags="--disable-libsanitizer"
+			if [ "$specific_arch" = "powerpc" ]; then
+				extra_flags="--with-long-double-64 --without-long-double-128 --enable-secureplt gcc_cv_target_ldbl128=no $extra_flags"
+			fi
 		fi
 
 		ln -s "$toolchain_prefix/bin/$compile_target-gcc" "$toolchain_prefix/bin/cc" 2>/dev/null
@@ -389,7 +410,7 @@ compile_rootfs(){
 		cd "$gcc_dir/build"
 
 		printf "Configuring GCC..."
-		script -qeac "../configure --prefix=/usr --with-sysroot=/ --disable-multilib --disable-bootstrap --host=$compile_target --disable-libstdcxx-debug --enable-languages=c,c++ --with-build-sysroot=$output_rootfs --libexecdir=/opt/libexec --bindir=/opt/bin --includedir=/opt/include --with-gxx-include-dir=/opt/include/c++/10.3.0 --datarootdir=/opt/share --with-native-system-header-dir=/opt/include $extra_flag 2>&1" "$logfile" >/dev/null
+		script -qeac "../configure --prefix=/usr --with-sysroot=/ --disable-multilib --disable-bootstrap --host=$compile_target --disable-libstdcxx-debug --enable-languages=c,c++ --with-build-sysroot=$output_rootfs --libexecdir=/opt/libexec --bindir=/opt/bin --includedir=/opt/include --with-gxx-include-dir=/opt/include/c++/10.3.0 --datarootdir=/opt/share --with-native-system-header-dir=/opt/include $extra_flags 2>&1" "$logfile" >/dev/null
 		printf "Done.\nCompiling GCC..."
 		script -qeac "make -j$threads 2>&1" "$logfile" >/dev/null
 		printf "Done.\nInstalling libstdc++..."
@@ -509,6 +530,7 @@ compile_kernel(){
 	script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads bzImage" "$logfile"
 	script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads modules" "$logfile"
 	script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch INSTALL_MOD_PATH=$output_rootfs modules_install" "$logfile"
+	#script -qeac "make CROSS_COMPILE=$compile_target- ARCH=$linux_arch -j$threads dtbs" "$logfile"
 	
 	if [ "$platform" = "3ds" ]; then
 		cp arch/$linux_arch/boot/dts/nintendo3ds_ctr.dtb "$output"
